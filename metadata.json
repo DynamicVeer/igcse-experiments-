@@ -1,0 +1,5 @@
+{
+  "name": "IGCSE Science Lab AI",
+  "description": "An interactive AI-powered chemistry lab and physics visualizer for IGCSE students, featuring real-time reaction prediction and 3D orbital visualizations.",
+  "requestFramePermissions": []
+}
