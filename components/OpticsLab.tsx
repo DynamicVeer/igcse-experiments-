@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Sun, RotateCcw, Brain, Layers, Circle, Triangle, Search, ChevronDown } from 'lucide-react';
+import { Sun, RotateCcw, Brain, Layers, Circle, Triangle, Search, ChevronDown, ArrowRight } from 'lucide-react';
 import { explainConcept } from '../services/geminiService';
 
 type OpticsMode = 'block' | 'prism' | 'convex' | 'concave' | 'mirror';
@@ -10,6 +10,7 @@ const OpticsLab: React.FC = () => {
   const [angle, setAngle] = useState(30); // Incident angle
   const [refractiveIndex, setRefractiveIndex] = useState(1.5);
   const [focalLength, setFocalLength] = useState(100); // Pixels
+  const [objectDistance, setObjectDistance] = useState(200); // Pixels
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -50,7 +51,7 @@ const OpticsLab: React.FC = () => {
           drawConcaveMirror(ctx, cx, cy);
       }
 
-  }, [mode, angle, refractiveIndex, focalLength]);
+  }, [mode, angle, refractiveIndex, focalLength, objectDistance]);
 
   // --- Drawing Functions ---
 
@@ -117,13 +118,6 @@ const OpticsLab: React.FC = () => {
       ctx.stroke();
 
       // Simplified Ray Tracing for equilateral prism
-      // Incident on left face
-      const incidentY = cy + 20;
-      const incidentX = cx - size/2 - 100;
-      
-      // Intersection with left face (approximate for visual simplicity)
-      // Left face eq: y - p1.y = m(x - p1.x). m = (p2.y - p1.y)/(p2.x - p1.x)
-      // Let's just force a hit point for stability
       const hit1X = cx - size/4; 
       const hit1Y = cy; 
       
@@ -133,25 +127,21 @@ const OpticsLab: React.FC = () => {
 
       drawRay(ctx, startX, startY, hit1X, hit1Y, '#ef4444');
 
-      // Inside Ray (Bends towards base)
-      // Bending proportional to index
       const bendFactor = (refractiveIndex - 1) * 15; 
       const hit2X = cx + size/4;
       const hit2Y = hit1Y + bendFactor;
 
       drawRay(ctx, hit1X, hit1Y, hit2X, hit2Y, '#ef4444');
 
-      // Exit Ray (Bends more towards base)
       const exitX = hit2X + 200;
-      const exitY = hit2Y + bendFactor * 2; // More bending
+      const exitY = hit2Y + bendFactor * 2; 
       
       drawRay(ctx, hit2X, hit2Y, exitX, exitY, '#ef4444', true);
       
-      // Dispersion Rays (Rainbow)
       if (refractiveIndex > 1.2) {
         ctx.globalAlpha = 0.5;
-        drawRay(ctx, hit2X, hit2Y, exitX, exitY - 20, '#8b5cf6', true); // Violet (bends most)
-        drawRay(ctx, hit2X, hit2Y, exitX, exitY + 5, '#ef4444', true); // Red (bends least)
+        drawRay(ctx, hit2X, hit2Y, exitX, exitY - 20, '#8b5cf6', true); 
+        drawRay(ctx, hit2X, hit2Y, exitX, exitY + 5, '#ef4444', true); 
         ctx.globalAlpha = 1.0;
       }
   };
@@ -162,48 +152,86 @@ const OpticsLab: React.FC = () => {
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(cx, cy, 15, 100, 0, 0, 2 * Math.PI);
+      ctx.ellipse(cx, cy, 15, 120, 0, 0, 2 * Math.PI);
       ctx.fill();
       ctx.stroke();
 
       // Focal Points
       drawFocus(ctx, cx + focalLength, cy, 'F');
       drawFocus(ctx, cx - focalLength, cy, 'F\'');
+      drawFocus(ctx, cx + 2*focalLength, cy, '2F');
+      drawFocus(ctx, cx - 2*focalLength, cy, '2F\'');
 
-      // Parallel Rays
-      const rayY = [cy - 60, cy - 30, cy, cy + 30, cy + 60];
-      rayY.forEach(y => {
-          // Incoming
-          drawRay(ctx, 0, y, cx, y, '#ef4444');
-          // Outgoing (Converge at F)
-          if (Math.abs(y - cy) < 1) {
-              drawRay(ctx, cx, y, cx + 400, y, '#ef4444', true); // Center goes straight
-          } else {
-              // y - y1 = m(x - x1)
-              // passes through (cx + f, cy)
-              const destX = cx + focalLength * 3; // extend past focus
-              const slope = (cy - y) / focalLength;
-              const destY = y + slope * (focalLength * 3);
-              drawRay(ctx, cx, y, destX, destY, '#ef4444', true);
-          }
-      });
+      // Object (Arrow)
+      const objH = 60;
+      const objX = cx - objectDistance;
+      const objY = cy - objH;
+      
+      // Draw Object
+      drawArrow(ctx, objX, cy, objX, objY, '#fbbf24', "Object");
+
+      // Image Calculation (1/v - 1/u = 1/f) => v = (uf) / (u+f)
+      // u is negative (left of lens)
+      const u = -objectDistance;
+      const f = focalLength;
+      const v = (u * f) / (u + f);
+      const m = v / u;
+      const imgH = objH * m;
+      const imgX = cx + v;
+      const imgY = cy - imgH; // Because Y is inverted in canvas (down is positive), but h is height "up" from axis? 
+      // Let's track Y coords. Object tip is at (objX, cy - 60).
+      // Image tip is at (imgX, cy + something).
+      // m is negative for real image (inverted).
+      // if m = -1, image tip is at cy - (-60) = cy + 60 (Below axis). Correct.
+
+      // Rays
+      // 1. Parallel to axis -> Refracts through F
+      drawRay(ctx, objX, objY, cx, objY, '#ef4444');
+      drawRay(ctx, cx, objY, cx + 400, objY + (400/f)*(objY-cy)*-1, '#ef4444', false); // Basic slope calc
+      // Better: from (cx, objY) through (cx+f, cy)
+      // Slope = (cy - objY) / f
+      // Y at x = imgX: cy + slope * v = cy + (cy-objY)/f * v = cy - h * (v/f) ... complicated.
+      // Just draw segment to image tip if real, or extend back if virtual.
+      
+      const isReal = v > 0;
+
+      // Ray 1 Path: Tip -> Lens(parallel) -> Focus -> Image Tip
+      drawRay(ctx, objX, objY, cx, objY, '#ef4444'); // To Lens
+      if (isReal) {
+          drawRay(ctx, cx, objY, imgX, cy + (cy-objY)*m, '#ef4444', true); // To Image
+      } else {
+          // Virtual: Diverges, but trace back hits image
+          // Draw solid ray diverging
+          const slope = (cy - objY) / f; 
+          drawRay(ctx, cx, objY, cx + 300, objY + slope * 300, '#ef4444', true);
+          // Draw dashed back to image
+          ctx.setLineDash([4, 4]);
+          drawRay(ctx, cx, objY, imgX, cy + (cy-objY)*m, '#ef4444', false);
+          ctx.setLineDash([]);
+      }
+
+      // Ray 2 Path: Tip -> Center -> Image Tip (Undeviated)
+      if (isReal) {
+          drawRay(ctx, objX, objY, imgX, cy + (cy-objY)*m, '#22c55e', false);
+      } else {
+           drawRay(ctx, objX, objY, cx + 300, cy + ((cy-objY)/(-objectDistance))*300, '#22c55e', true); // Continue forward
+           ctx.setLineDash([4, 4]);
+           drawRay(ctx, objX, objY, imgX, cy + (cy-objY)*m, '#22c55e', false); // Back trace
+           ctx.setLineDash([]);
+      }
+
+      // Draw Image
+      const imageYTip = cy + (cy - objY) * m;
+      const isVirtual = v < 0;
+      drawArrow(ctx, imgX, cy, imgX, imageYTip, isVirtual ? '#a8a29e' : '#fbbf24', isVirtual ? "Virtual Image" : "Real Image");
   };
 
   const drawConcaveLens = (ctx: CanvasRenderingContext2D, cx: number, cy: number) => {
-      // Lens Shape (Hourglass-ish)
+      // Lens Shape
       ctx.fillStyle = 'rgba(200, 230, 255, 0.1)';
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2;
-      
-      ctx.beginPath();
-      ctx.moveTo(cx - 10, cy - 100);
-      ctx.quadraticCurveTo(cx + 10, cy, cx - 10, cy + 100); // Left curve inwards? No, concave is thinner at center
-      ctx.lineTo(cx + 10, cy + 100);
-      ctx.quadraticCurveTo(cx - 10, cy, cx + 10, cy - 100);
-      ctx.closePath();
-      // Visual approximation: Just draw a box with curved sides
       ctx.clearRect(cx-15, cy-100, 30, 200);
-      
       ctx.beginPath();
       ctx.moveTo(cx-15, cy-100);
       ctx.lineTo(cx+15, cy-100);
@@ -216,22 +244,17 @@ const OpticsLab: React.FC = () => {
       // Focal Points
       drawFocus(ctx, cx - focalLength, cy, 'F');
 
-      // Parallel Rays
+      // Just parallel rays for now as requested focus is Convex
       const rayY = [cy - 60, cy - 30, cy, cy + 30, cy + 60];
       rayY.forEach(y => {
-          drawRay(ctx, 0, y, cx, y, '#ef4444'); // Incoming
-          
+          drawRay(ctx, 0, y, cx, y, '#ef4444'); 
           if (Math.abs(y - cy) < 1) {
               drawRay(ctx, cx, y, cx + 400, y, '#ef4444', true);
           } else {
-              // Diverge from F (cx - focalLength)
               const slope = (y - cy) / focalLength; 
               const destX = cx + 400;
               const destY = y + slope * 400;
-              
               drawRay(ctx, cx, y, destX, destY, '#ef4444', true);
-              
-              // Virtual Ray back to focus
               ctx.setLineDash([2, 4]);
               ctx.globalAlpha = 0.5;
               drawRay(ctx, cx - focalLength, cy, cx, y, '#ef4444', false);
@@ -242,48 +265,23 @@ const OpticsLab: React.FC = () => {
   };
 
   const drawConcaveMirror = (ctx: CanvasRenderingContext2D, cx: number, cy: number) => {
-      // Mirror Shape (C curve)
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.arc(cx + 20, cy, 120, Math.PI * 0.8, Math.PI * 1.2);
-      ctx.stroke();
-      
-      // Silver backing lines
-      ctx.lineWidth = 1;
-      for(let i = 0; i < 10; i++) {
-           // Simple visual hash
-      }
-
-      // Focal Point
-      const fX = cx + 20 - focalLength; // To the left for concave mirror facing left? Assuming light from left, mirror should face left.
-      // Let's flip: Light comes from left. Mirror is on right. Curve opens to left.
-      // Center of curvature is at cx - R. Focus is at cx - R/2.
-      // Drawing mirror at CX.
-      ctx.beginPath();
-      ctx.arc(cx + 50, cy, 150, Math.PI - 0.5, Math.PI + 0.5); // Curve facing left
+      ctx.arc(cx + 50, cy, 150, Math.PI - 0.5, Math.PI + 0.5); 
       ctx.stroke();
 
-      const mirrorSurfaceX = cx - 100 + 150; // approx X of surface at center = cx + 50
       const realFocusX = (cx + 50) - focalLength;
-      
       drawFocus(ctx, realFocusX, cy, 'F');
 
-      // Rays
       const rayY = [cy - 60, cy - 30, cy, cy + 30, cy + 60];
       rayY.forEach(y => {
-          // Incoming
-          // Approx intersection with shallow curve = straight line at cx + 50
-          const hitX = cx + 50 - (Math.pow(y-cy, 2) / 300); // Parabolic approx
+          const hitX = cx + 50 - (Math.pow(y-cy, 2) / 300);
           drawRay(ctx, 0, y, hitX, y, '#ef4444');
-
           if (Math.abs(y - cy) < 1) {
-              drawRay(ctx, hitX, y, 0, y, '#ef4444', true); // Reflect back center
+              drawRay(ctx, hitX, y, 0, y, '#ef4444', true);
           } else {
-              // Reflect through Focus
-              // Equation of line from hitX,y to realFocusX, cy
               const slope = (cy - y) / (realFocusX - hitX);
-              // Extend to left
               const destX = 0;
               const destY = y - slope * hitX; 
               drawRay(ctx, hitX, y, destX, destY, '#ef4444', true);
@@ -313,6 +311,29 @@ const OpticsLab: React.FC = () => {
       }
   };
 
+  const drawArrow = (ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, label: string) => {
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      
+      // Arrow head at x2, y2
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - 10 * Math.cos(angle - Math.PI / 6), y2 - 10 * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - 10 * Math.cos(angle + Math.PI / 6), y2 - 10 * Math.sin(angle + Math.PI / 6));
+      ctx.lineTo(x2, y2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      ctx.fillStyle = color;
+      ctx.font = '10px sans-serif';
+      ctx.fillText(label, x1 - 10, y2 - 10);
+  };
+
   const drawFocus = (ctx: CanvasRenderingContext2D, x: number, y: number, label: string) => {
       ctx.fillStyle = '#fff';
       ctx.beginPath();
@@ -327,6 +348,7 @@ const OpticsLab: React.FC = () => {
       setAngle(30);
       setRefractiveIndex(1.5);
       setFocalLength(100);
+      setObjectDistance(200);
       setExplanation("");
   };
 
@@ -338,39 +360,22 @@ const OpticsLab: React.FC = () => {
 
     if (mode === 'block') {
         topic = "Refraction through Glass Block";
-        promptData = {
-            angle: `${angle}°`,
-            index: refractiveIndex,
-            law: "Snell's Law"
-        };
-    } else if (mode === 'prism') {
-        topic = "Refraction and Dispersion in Prism";
-        promptData = {
-            incidentAngle: `${angle}°`,
-            materialIndex: refractiveIndex,
-            phenomenon: "Dispersion (splitting of light)"
-        };
+        promptData = { angle: `${angle}°`, index: refractiveIndex };
     } else if (mode === 'convex') {
         topic = "Convex Lens Image Formation";
+        const u = objectDistance;
+        const f = focalLength;
+        const v = (u * f) / (u - f); // Calc for real v magnitude if u > f
+        
         promptData = {
             focalLength: focalLength,
-            type: "Converging",
-            rayBehavior: "Parallel rays converge at Focus"
+            objectDistance: objectDistance,
+            imageType: objectDistance > focalLength ? "Real, Inverted" : "Virtual, Upright, Magnified",
+            magnification: (v/u).toFixed(2)
         };
-    } else if (mode === 'concave') {
-        topic = "Concave Lens Ray Path";
-        promptData = {
-            focalLength: focalLength,
-            type: "Diverging",
-            rayBehavior: "Parallel rays diverge, appearing to come from virtual Focus"
-        };
-    } else if (mode === 'mirror') {
-        topic = "Concave Mirror Reflection";
-        promptData = {
-            focalLength: focalLength,
-            type: "Converging Mirror",
-            rayBehavior: "Parallel rays reflect through Focus"
-        };
+    } else {
+        topic = "Optical System";
+        promptData = { mode: mode };
     }
 
     const text = await explainConcept(topic, promptData);
@@ -394,25 +399,23 @@ const OpticsLab: React.FC = () => {
                {/* Mode Selector */}
                <div>
                    <label className="text-xs font-bold text-slate-300 uppercase mb-2 block">Optical Element</label>
-                   <div className="grid grid-cols-1 gap-2">
-                       <div className="relative">
-                           <select 
-                               value={mode} 
-                               onChange={(e) => setMode(e.target.value as OpticsMode)}
-                               className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white appearance-none cursor-pointer focus:border-blue-500 focus:outline-none"
-                           >
-                               <option value="block">Glass Block (Refraction)</option>
-                               <option value="prism">Triangular Prism</option>
-                               <option value="convex">Convex Lens (Converging)</option>
-                               <option value="concave">Concave Lens (Diverging)</option>
-                               <option value="mirror">Concave Mirror</option>
-                           </select>
-                           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16}/>
-                       </div>
+                   <div className="relative">
+                       <select 
+                           value={mode} 
+                           onChange={(e) => setMode(e.target.value as OpticsMode)}
+                           className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white appearance-none cursor-pointer focus:border-blue-500 focus:outline-none"
+                       >
+                           <option value="block">Glass Block (Refraction)</option>
+                           <option value="prism">Triangular Prism</option>
+                           <option value="convex">Convex Lens (Converging)</option>
+                           <option value="concave">Concave Lens (Diverging)</option>
+                           <option value="mirror">Concave Mirror</option>
+                       </select>
+                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16}/>
                    </div>
                </div>
 
-               {/* Controls Dynamic based on Mode */}
+               {/* Dynamic Controls */}
                {(mode === 'block' || mode === 'prism') && (
                    <>
                        <div>
@@ -433,16 +436,26 @@ const OpticsLab: React.FC = () => {
                )}
 
                {(mode === 'convex' || mode === 'concave' || mode === 'mirror') && (
-                   <div>
-                       <label className="flex justify-between text-sm text-slate-300 mb-1">
-                           <span>Focal Length</span>
-                           <span>{focalLength} px</span>
-                       </label>
-                       <input type="range" min="50" max="200" step="10" value={focalLength} onChange={e => setFocalLength(Number(e.target.value))} className="w-full accent-blue-500 h-2 bg-slate-700 rounded-lg"/>
-                   </div>
+                   <>
+                       <div>
+                           <label className="flex justify-between text-sm text-slate-300 mb-1">
+                               <span>Focal Length (f)</span>
+                               <span>{focalLength} px</span>
+                           </label>
+                           <input type="range" min="50" max="150" step="10" value={focalLength} onChange={e => setFocalLength(Number(e.target.value))} className="w-full accent-blue-500 h-2 bg-slate-700 rounded-lg"/>
+                       </div>
+                       {mode === 'convex' && (
+                           <div>
+                               <label className="flex justify-between text-sm text-slate-300 mb-1">
+                                   <span>Object Distance (u)</span>
+                                   <span>{objectDistance} px</span>
+                               </label>
+                               <input type="range" min="50" max="350" step="10" value={objectDistance} onChange={e => setObjectDistance(Number(e.target.value))} className="w-full accent-amber-500 h-2 bg-slate-700 rounded-lg"/>
+                           </div>
+                       )}
+                   </>
                )}
 
-               {/* Info Box */}
                <div className="bg-slate-900 p-4 rounded border border-slate-600 flex items-center gap-3">
                    {mode === 'block' && <Layers size={24} className="text-slate-400"/>}
                    {mode === 'prism' && <Triangle size={24} className="text-slate-400"/>}
@@ -451,13 +464,7 @@ const OpticsLab: React.FC = () => {
                    
                    <div>
                        <div className="text-xs text-slate-400 uppercase font-bold">Active Element</div>
-                       <div className="text-blue-400 font-medium">
-                           {mode === 'block' && "Rectangular Glass Block"}
-                           {mode === 'prism' && "Equilateral Prism"}
-                           {mode === 'convex' && "Convex Lens"}
-                           {mode === 'concave' && "Concave Lens"}
-                           {mode === 'mirror' && "Concave Spherical Mirror"}
-                       </div>
+                       <div className="text-blue-400 font-medium capitalize">{mode}</div>
                    </div>
                </div>
            </div>
@@ -471,7 +478,7 @@ const OpticsLab: React.FC = () => {
                     <Brain size={16} /> {loading ? "Thinking..." : "Explain Physics"}
                 </button>
                 {explanation && (
-                    <div className="mt-4 p-3 bg-slate-900 rounded text-sm text-slate-300 animate-fade-in border-l-2 border-cyan-500">
+                    <div className="mt-4 p-3 bg-slate-900 rounded text-sm text-slate-300 animate-fade-in border-l-2 border-cyan-500 max-h-40 overflow-y-auto custom-scrollbar">
                         {explanation}
                     </div>
                 )}
@@ -480,7 +487,7 @@ const OpticsLab: React.FC = () => {
        
        <div className="col-span-1 lg:col-span-2 bg-slate-900 rounded-xl border border-slate-700 flex items-center justify-center p-4 overflow-hidden relative">
            <div className="absolute top-4 right-4 text-xs text-slate-500 font-mono z-10 pointer-events-none">
-               Ray Trace Engine v1.0
+               Ray Trace Engine v2.0
            </div>
            <canvas ref={canvasRef} width={800} height={500} className="w-full h-full object-contain"/>
        </div>

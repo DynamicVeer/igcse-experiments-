@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { CHEMICALS, ORBITAL_TYPES } from '../constants';
 import { Chemical, ReactionResult, ReactionRule } from '../types';
 import { simulateReaction, getOrbitalDescription } from '../services/geminiService';
-import { FlaskConical, Atom, Sparkles, Info, AlertTriangle, Droplets, Flame, TestTube, Settings2, RotateCcw, Leaf, Timer, Zap, Scale, Activity } from 'lucide-react';
+import { FlaskConical, Atom, Sparkles, Info, AlertTriangle, Droplets, Flame, TestTube, Settings2, RotateCcw, Leaf, Timer, Zap, Scale, Activity, X, Layers } from 'lucide-react';
 import OrbitalVisualizer from './OrbitalVisualizer';
 import TitrationLab from './TitrationLab';
 import FlameTestLab from './FlameTestLab';
@@ -14,9 +14,11 @@ import RatesLab from './RatesLab';
 import ElectrolysisLab from './ElectrolysisLab';
 import EquilibriumLab from './EquilibriumLab';
 import EnergyProfileLab from './EnergyProfileLab';
+import ChromatographyLab from './ChromatographyLab';
+import ChemicalDetails from './ChemicalDetails';
 
 interface Props {
-    initialTab?: 'mix' | 'orbitals' | 'titration' | 'flame' | 'qualitative' | 'organic' | 'rates' | 'electrolysis' | 'equilibrium' | 'energy';
+    initialTab?: 'mix' | 'orbitals' | 'titration' | 'flame' | 'qualitative' | 'organic' | 'rates' | 'electrolysis' | 'equilibrium' | 'energy' | 'chromatography';
 }
 
 const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
@@ -24,8 +26,10 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
   const [aiResult, setAiResult] = useState<ReactionResult | null>(null);
   const [localRule, setLocalRule] = useState<ReactionRule | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'mix' | 'orbitals' | 'titration' | 'flame' | 'qualitative' | 'organic' | 'rates' | 'electrolysis' | 'equilibrium' | 'energy'>(initialTab || 'mix');
+  const [activeTab, setActiveTab] = useState<'mix' | 'orbitals' | 'titration' | 'flame' | 'qualitative' | 'organic' | 'rates' | 'electrolysis' | 'equilibrium' | 'energy' | 'chromatography'>(initialTab || 'mix');
   
+  const [viewingChemical, setViewingChemical] = useState<Chemical | null>(null);
+
   // Orbital State
   const [selectedOrbital, setSelectedOrbital] = useState(ORBITAL_TYPES[0]);
   const [orbitalDesc, setOrbitalDesc] = useState("");
@@ -34,7 +38,6 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
   const handleChemicalSelect = (chem: Chemical) => {
     if (selectedChemicals.length < 5 && !selectedChemicals.find(c => c.id === chem.id)) {
       setSelectedChemicals([...selectedChemicals, chem]);
-      // We don't reset localRule here so that ongoing reactions don't disappear visually immediately
       setAiResult(null);
     }
   };
@@ -68,6 +71,12 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
                 className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === 'mix' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'}`}
             >
                 <FlaskConical size={16} /> Reactions
+            </button>
+            <button 
+                onClick={() => setActiveTab('chromatography')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap flex items-center gap-2 ${activeTab === 'chromatography' ? 'bg-purple-500/20 text-purple-400' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+                <Layers size={16} /> Separation
             </button>
             <button 
                 onClick={() => setActiveTab('rates')}
@@ -139,38 +148,92 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
             </div>
             <div className="overflow-y-auto pr-2 space-y-2 flex-1 custom-scrollbar">
               {CHEMICALS.filter(c => c.type !== 'organic').map(chem => (
-                <button
-                  key={chem.id}
-                  onClick={() => handleChemicalSelect(chem)}
-                  disabled={selectedChemicals.some(c => c.id === chem.id) || selectedChemicals.length >= 5}
-                  className={`w-full p-3 rounded-lg flex items-center justify-between group transition-all ${
-                    selectedChemicals.some(c => c.id === chem.id) 
-                      ? 'bg-emerald-900/30 border border-emerald-800 opacity-50 cursor-not-allowed'
-                      : 'bg-slate-700/50 hover:bg-slate-700 border border-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full ${chem.color} border shadow-sm flex items-center justify-center text-[10px] text-slate-900 font-bold`}>
-                      {chem.state === 'solid' ? 'S' : 'L'}
-                    </div>
-                    <div className="text-left">
-                      <div className="font-medium text-slate-200">{chem.name}</div>
-                      <div className="text-xs text-slate-400 font-mono">{chem.formula}</div>
-                    </div>
-                  </div>
-                  {selectedChemicals.some(c => c.id === chem.id) && <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>}
-                </button>
+                <div key={chem.id} className="flex gap-1">
+                    <button
+                        onClick={() => handleChemicalSelect(chem)}
+                        disabled={selectedChemicals.some(c => c.id === chem.id) || selectedChemicals.length >= 5}
+                        className={`flex-1 p-3 rounded-lg flex items-center justify-between group transition-all ${
+                            selectedChemicals.some(c => c.id === chem.id) 
+                            ? 'bg-emerald-900/30 border border-emerald-800 opacity-50 cursor-not-allowed'
+                            : 'bg-slate-700/50 hover:bg-slate-700 border border-slate-600'
+                        }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full ${chem.color} border shadow-sm flex items-center justify-center text-[10px] text-slate-900 font-bold`}>
+                            {chem.state === 'solid' ? 'S' : 'L'}
+                            </div>
+                            <div className="text-left">
+                            <div className="font-medium text-slate-200">{chem.name}</div>
+                            <div className="text-xs text-slate-400 font-mono">{chem.formula}</div>
+                            </div>
+                        </div>
+                        {selectedChemicals.some(c => c.id === chem.id) && <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>}
+                    </button>
+                    <button 
+                        onClick={() => setViewingChemical(chem)}
+                        className="px-3 rounded-lg bg-slate-700/50 border border-slate-600 text-slate-400 hover:text-white hover:bg-slate-600 transition-colors"
+                    >
+                        <Info size={16} />
+                    </button>
+                </div>
               ))}
             </div>
           </div>
 
           {/* Mixing Area */}
           <div className="lg:col-span-8 flex flex-col gap-6">
-            {/* Beaker Simulation (No AI required for basic visual) */}
+            {/* Beaker Simulation */}
             <BeakerSimulation 
                 chemicals={selectedChemicals} 
                 onReactionFound={setLocalRule}
             />
+
+            {/* Selected Chemicals Properties */}
+            {selectedChemicals.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 animate-fade-in">
+                    {selectedChemicals.map(c => (
+                        <div key={c.id} className="bg-slate-800/50 border border-slate-700 p-3 rounded-lg relative group hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => setViewingChemical(c)}>
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); setSelectedChemicals(selectedChemicals.filter(x => x.id !== c.id)); }}
+                                className="absolute top-2 right-2 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                title="Remove Chemical"
+                            >
+                                <X size={14}/>
+                            </button>
+                            
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className={`w-4 h-4 rounded-full ${c.color} border border-white/10 shadow-sm shrink-0`}></div>
+                                <div className="min-w-0">
+                                    <div className="font-bold text-slate-200 text-sm truncate" title={c.name}>{c.name}</div>
+                                    <div className="text-xs text-slate-500 font-mono">{c.formula}</div>
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-1.5 text-[10px] text-slate-400 uppercase font-bold tracking-wide">
+                                <div className="flex justify-between items-center border-b border-slate-700/50 pb-1">
+                                    <span>State</span>
+                                    <span className="text-slate-300 font-normal capitalize">{c.state}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-b border-slate-700/50 pb-1">
+                                    <span>Type</span>
+                                    <span className="text-slate-300 font-normal capitalize">{c.type}</span>
+                                </div>
+                                {c.ph !== undefined && (
+                                    <div className="flex justify-between items-center">
+                                        <span>pH</span>
+                                        <span className={`font-mono text-xs ${c.ph < 7 ? 'text-red-400' : c.ph > 7 ? 'text-blue-400' : 'text-emerald-400'}`}>
+                                            {c.ph}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="absolute bottom-2 right-2 text-slate-600 group-hover:text-slate-400 transition-colors">
+                                <Info size={12} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Controls & Analysis */}
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 min-h-[150px]">
@@ -254,6 +317,7 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
       {activeTab === 'titration' && <TitrationLab />}
       {activeTab === 'flame' && <FlameTestLab />}
       {activeTab === 'qualitative' && <QualitativeLab />}
+      {activeTab === 'chromatography' && <ChromatographyLab />}
 
       {activeTab === 'orbitals' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
@@ -321,6 +385,11 @@ const ChemistryLab: React.FC<Props> = ({ initialTab }) => {
                  </div>
             </div>
         </div>
+      )}
+
+      {/* Chemical Details Overlay */}
+      {viewingChemical && (
+          <ChemicalDetails chemical={viewingChemical} onClose={() => setViewingChemical(null)} />
       )}
     </div>
   );
